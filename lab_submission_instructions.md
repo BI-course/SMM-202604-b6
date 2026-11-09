@@ -8,9 +8,28 @@
 
 | **Details**                                                                                                                           | **Comment** |
 |:--------------------------------------------------------------------------------------------------------------------------------------|:------------|
-| **Student ID**                                                                                                                        |             |
-| **Name**                                                                                                                              |             |
-| **What part of the lab did you personally<br/>contribute to (provide a link to the<br/>branch(es)), and what did you learn from it?** |             |
+| **Student ID**                                                                                                                       |     149632        |
+| **Name**                                                                                                                              |     Mugisha Florent Guy        |
+| **What part of the lab did you personally<br/>contribute to (provide a link to the<br/>branch(es)), and what did you learn from it?** |     Branch: https://github.com/BI-course/SMM-202604-b6/tree/member1-regression-classification
+Pull Request: https://github.com/BI-course/SMM-202604-b6/pull/1
+
+I worked on the regression and classification API endpoints
+(sme-revenue-regressor and sme-credit-risk-classifier). I verified both
+endpoints locally against the group's trained Lasso regressor and SVC
+classifier, and added input validation so that a malformed request
+(missing required fields) returns a clean 400 error naming the exact
+problem, instead of crashing with an unhandled 500 and a scikit-learn
+stack trace. I also wrote an automated smoke test
+(tests/test_regression_classification_endpoints.py) that checks both
+the valid-request path and the error path for each endpoint.
+
+What I learned: that the API's error-handling behavior matters as much
+as the model's prediction accuracy -- an endpoint that crashes
+opaquely on bad input is much harder for anyone else (a frontend
+developer, a teammate, a grader using Postman) to work with than one
+that explains what went wrong. This reinforced the lab's point that
+the API is the actual product being delivered, not just the model
+behind it.        |
 
 **Member 2:**
 
