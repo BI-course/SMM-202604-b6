@@ -37,24 +37,6 @@ app = Flask(__name__)
 # -----------------------------------------------------------------------
 # CORS (Cross-Origin Resource Sharing)
 # -----------------------------------------------------------------------
-# By default, a browser blocks JavaScript on one origin (e.g., a page served
-# from http://127.0.0.1:5500) from calling an API on a different origin
-# (e.g., http://127.0.0.1:5000). `flask_cors` relaxes that restriction for the
-# specific origins we trust during local development.
-#
-# A few alternative configurations are shown below (commented out) so you can
-# see how the restriction can be loosened or tightened depending on your
-# deployment target. Only ONE of these should be active at a time.
-
-# Option A (the most permissive. This is fine for a quick classroom demo or
-# local development, *NEVER* for production):
-# CORS(app)
-
-# Option B (allow only a specific frontend origin):
-# CORS(app, resources={r"/api/*": {"origins": "http://127.0.0.1:5500"}})
-
-# Option C (the one actually in use here -- allow localhost/127.0.0.1 on the
-# ports our lab's frontend files are typically served from):
 CORS(app, resources={r"/api/*": {"origins": [
     "http://localhost:5000", "http://127.0.0.1:5000",
     "http://localhost:5500", "http://127.0.0.1:5500",
@@ -66,9 +48,6 @@ CORS(app, resources={r"/api/*": {"origins": [
 # -----------------------------------------------------------------------
 # The best practice is to load the four persisted artifacts ONCE, at startup,
 # not per-request.
-# Loading inside a route function would re-read the file from disk on every
-# single API call, which is slow and pointless -- the fitted model never
-# changes while the server is running.
 # -----------------------------------------------------------------------
 MODEL_DIR = "./model"
 
@@ -95,6 +74,70 @@ sku_lookup = arm_artifact["sku_lookup"]
 print("All the four artifacts have been loaded. The API is ready.")
 
 
+# -----------------------------------------------------------------------
+# Member 1 contribution: lightweight input validation for the regression
+# and classification endpoints.
+#
+# Without this, a missing field doesn't fail cleanly -- it propagates into
+# the pipeline's ColumnTransformer and surfaces as an opaque 500 Internal
+# Server Error with a scikit-learn stack trace, which is useless to a
+# frontend developer or API consumer trying to integrate against this
+# service. Validating the payload up front and returning a 400 with the
+# exact missing field names is the difference between "the API told me
+# what I did wrong" and "the API crashed."
+#
+# NULLABLE_FIELDS lists fields that are allowed to be explicitly null in
+# the JSON body (structural missingness that the pipeline's own imputer is
+# designed to handle) -- those still must be PRESENT as a key, just not
+# necessarily non-null.
+# -----------------------------------------------------------------------
+REGRESSION_REQUIRED_FIELDS = [
+    "sector", "county", "quarter", "business_age_years", "num_employees",
+    "owner_education_level", "monthly_marketing_spend_kes",
+    "avg_daily_foot_traffic", "online_presence_score", "loan_amount_kes",
+    "interest_rate_pct", "inflation_rate_pct", "competitor_density",
+    "customer_satisfaction_score",
+]
+REGRESSION_NULLABLE_FIELDS = {"avg_daily_foot_traffic"}
+
+CLASSIFICATION_REQUIRED_FIELDS = [
+    "sector", "county", "quarter", "loan_purpose", "owner_education_level",
+    "business_age_years", "num_employees", "monthly_revenue_kes",
+    "loan_amount_kes", "loan_term_months", "interest_rate_pct",
+    "collateral_value_kes", "debt_to_income_ratio", "credit_score",
+    "num_previous_loans", "missed_payments_count", "online_presence_score",
+    "customer_satisfaction_score", "competitor_density",
+]
+CLASSIFICATION_NULLABLE_FIELDS = {"collateral_value_kes"}
+
+
+def validate_payload(payload, required_fields, nullable_fields):
+    """
+    Returns a list of human-readable problems with the payload, or an empty
+    list if it is valid. Does not raise -- the caller decides how to turn
+    this into an HTTP response.
+    """
+    if payload is None:
+        return ["Request body is missing or is not valid JSON "
+                "(did you set Content-Type: application/json?)"]
+
+    problems = []
+    missing = [f for f in required_fields if f not in payload]
+    if missing:
+        problems.append(f"Missing required field(s): {', '.join(missing)}")
+
+    unexpectedly_null = [
+        f for f in required_fields
+        if f in payload and payload[f] is None and f not in nullable_fields
+    ]
+    if unexpectedly_null:
+        problems.append(
+            f"Field(s) must not be null: {', '.join(unexpectedly_null)}"
+        )
+
+    return problems
+
+
 # 1. REGRESSION -- predict monthly revenue (KES) for an SME
 
 # Sample request (cURL):
@@ -108,37 +151,19 @@ print("All the four artifacts have been loaded. The API is ready.")
 #             "online_presence_score": 78.0, "loan_amount_kes": 250000,
 #             "interest_rate_pct": 14.5, "inflation_rate_pct": 6.5,
 #             "competitor_density": 5, "customer_satisfaction_score": 4.2}'
-#
-# Sample request (PowerShell):
-#   Invoke-RestMethod -Method Post `
-#     -Uri "http://127.0.0.1:5000/api/v1/models/sme-revenue-regressor/predictions" `
-#     -ContentType "application/json" `
-#     -Body (@{sector="Technology"; county="Nairobi"; quarter="Q3";
-#              business_age_years=4.5; num_employees=12;
-#              owner_education_level="Secondary";
-#              monthly_marketing_spend_kes=45000; avg_daily_foot_traffic=$null;
-#              online_presence_score=78.0; loan_amount_kes=250000;
-#              interest_rate_pct=14.5; inflation_rate_pct=6.5;
-#              competitor_density=5; customer_satisfaction_score=4.2} | ConvertTo-Json)
-#
-# Note: avg_daily_foot_traffic is deliberately null for a Technology-sector
-# business (fully online -- foot traffic is structurally not applicable, not
-# missing at random). The pipeline's own imputer handles the null value; nothing
-# in this file needs to know that rule.
 @app.route("/api/v1/models/sme-revenue-regressor/predictions", methods=["POST"])
 def predict_revenue():
-    payload = request.get_json()
+    payload = request.get_json(silent=True)
 
-    # Build a one-row DataFrame straight from the JSON body. No manual
-    # label-encoding, no manual date parsing, no manual column reordering, etc. --
-    # the pipeline's ColumnTransformer already knows which columns it expects
-    # and how to preprocess each one.
+    problems = validate_payload(
+        payload, REGRESSION_REQUIRED_FIELDS, REGRESSION_NULLABLE_FIELDS
+    )
+    if problems:
+        return jsonify({"errors": problems}), 400
+
     input_row = pd.DataFrame([payload])
 
     predicted_log_revenue = regression_pipeline.predict(input_row)[0]
-    # The pipeline was trained on log1p(revenue) because revenue was
-    # right-skewed; we invert that single transformation here to report the
-    # predictions in KES.
     import numpy as np
     predicted_revenue_kes = float(np.expm1(predicted_log_revenue))
 
@@ -162,15 +187,16 @@ def predict_revenue():
 #             "credit_score": 590, "num_previous_loans": 1,
 #             "missed_payments_count": 3, "online_presence_score": 40.0,
 #             "customer_satisfaction_score": 3.4, "competitor_density": 6}'
-#
-#
-# Note: collateral_value_kes is null here because "Working Capital" loans are
-# more often unsecured (structural missingness, not missing at random) --
-# again, the pipeline's imputer + missingness indicator already handles this
-# internally; this route does not need special code for it.
 @app.route("/api/v1/models/sme-credit-risk-classifier/predictions", methods=["POST"])
 def predict_credit_risk():
-    payload = request.get_json()
+    payload = request.get_json(silent=True)
+
+    problems = validate_payload(
+        payload, CLASSIFICATION_REQUIRED_FIELDS, CLASSIFICATION_NULLABLE_FIELDS
+    )
+    if problems:
+        return jsonify({"errors": problems}), 400
+
     input_row = pd.DataFrame([payload])
 
     predicted_class = classification_pipeline.predict(input_row)[0]
@@ -193,13 +219,6 @@ def predict_credit_risk():
 #   curl -X POST http://127.0.0.1:5000/api/v1/models/mall-customer-segmenter/predictions \
 #        -H "Content-Type: application/json" \
 #        -d '{"Age": 27, "Annual Income (k$)": 45, "Spending Score (1-100)": 72}'
-#
-# Note: unlike the two Pipelines above, K-Means does not bundle its own
-# scaler, so this is the one endpoint where the scaling step is applied
-# explicitly (scaler.transform(...) then kmeans.predict(...)) -- exactly the
-# two-object pattern the clustering notebook persisted together for this
-# reason. There is still no manual encoding or feature engineering: the
-# three numeric fields are used exactly as the client sends them.
 @app.route("/api/v1/models/mall-customer-segmenter/predictions", methods=["POST"])
 def predict_customer_segment():
     payload = request.get_json()
@@ -220,18 +239,6 @@ def predict_customer_segment():
 #   curl -X POST http://127.0.0.1:5000/api/v1/models/ecommerce-recommender/predictions \
 #        -H "Content-Type: application/json" \
 #        -d '{"cart": ["H06", "H07"]}'
-#
-#   curl -X POST http://127.0.0.1:5000/api/v1/models/ecommerce-recommender/predictions \
-#        -H "Content-Type: application/json" \
-#        -d '{"cart": ["P04", "P01"]}'
-#
-# Note: there is no scikit-learn ".predict()" here -- the mined association
-# rules were precomputed into a lookup dictionary
-# (antecedent SKU-set -> ranked candidate consequents)
-# during the notebook's persistence stage. This
-# endpoint performs the exact same lookup+rank step a production recommender
-# microservice would perform on every incoming request; it does not mine
-# for the rules again.
 @app.route("/api/v1/models/ecommerce-recommender/predictions", methods=["POST"])
 def recommend_products():
     payload = request.get_json()
@@ -268,15 +275,4 @@ def recommend_products():
 # Entry point
 # -----------------------------------------------------------------------
 if __name__ == "__main__":
-    # Development server. debug=True gives auto-reload and an interactive
-    # debugger on errors -- convenient in class, but NEVER use debug=True in
-    # a deployed/public environment (it can expose a remote code execution
-    # console to anyone who can reach the server).
     app.run(debug=True)
-
-    # Production-style alternative (no debugger, no auto-reload):
-    # app.run(debug=False, host="0.0.0.0", port=5000)
-
-    # HTTPS/TLS alternative for local development (requires a self-signed
-    # certificate; see app_server_reverse_proxy_server_setup.md):
-    # app.run(debug=False, ssl_context=("cert.pem", "key.pem"))
