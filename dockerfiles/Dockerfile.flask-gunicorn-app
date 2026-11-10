@@ -56,7 +56,11 @@ COPY --from=builder /build /opt/app-smm
 
 EXPOSE 8000
 
+# Check whether Gunicorn is accepting connections
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import socket; s=socket.create_connection(('127.0.0.1', 8000), timeout=3); s.close()" || exit 1
 # 5 Gunicorn worker processes -- a fixed, reasonable default for a small
+
 # lab container. In a real deployment this is normally sized from the
 # machine's CPU count, e.g. (2 x number_of_cores) + 1.
 CMD ["gunicorn", "--chdir", "/opt/app-smm", "-w", "5", "-b", "0.0.0.0:8000", "api:app"]
