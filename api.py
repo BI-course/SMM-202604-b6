@@ -278,6 +278,15 @@ def recommend_products():
     })
 
 
+# Health check endpoint for Render deployment
+@app.route("/health", methods=["GET"])
+def health_check():
+    return jsonify({
+        "status": "healthy",
+        "service": "Group B6 ML API"
+    }), 200
+
+
 # -----------------------------------------------------------------------
 # Entry point
 # -----------------------------------------------------------------------

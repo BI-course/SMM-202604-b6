@@ -1,0 +1,13 @@
+
+services:
+  - type: web
+    name: smm-202604-b6-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./dockerfiles/Dockerfile.flask-gunicorn-app
+    dockerContext: .
+    dockerCommand: gunicorn --chdir /opt/app-smm --workers 1 --bind 0.0.0.0:8000 api:app
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8000"
