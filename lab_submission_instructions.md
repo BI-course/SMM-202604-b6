@@ -49,12 +49,24 @@ behind it.        |
 
 **Member 4:**
 
-| **Details**                                                                                                                           | **Comment** |
-|:--------------------------------------------------------------------------------------------------------------------------------------|:------------|
-| **Student ID**                                                                                                                        |             |
-| **Name**                                                                                                                              |             |
-| **What part of the lab did you personally<br/>contribute to (provide a link to the<br/>branch(es)), and what did you learn from it?** |             |
+| **Details**                                                                                                                           | **Comment**                                                                 |
+|:--------------------------------------------------------------------------------------------------------------------------------------|:----------------------------------------------------------------------------|
+| **Student ID**                                                                                                                        | 158667                                                                      |
+| **Name**                                                                                                                              | Carson Bwire                                                                |
+| **What part of the lab did you personally<br/>contribute to (provide a link to the<br/>branch(es)), and what did you learn from it?** | https://github.com/BI-course/SMM-202604-b6/tree/feature/render-integration  |
+| **Health Check**                                                                                                                      | https://smm-202604-b6-api.onrender.com/health                                                                            |
 
+My Contribution:
+
+I was responsible for Render deployment, API integration and final testing. I integrated and tested all four machine learning endpoints (Regression, Classification, Clustering and Apriori Recommendation) using Docker and Gunicorn, confirming that each returned successful predictions.
+
+I added a /health endpoint to api.py and created render.yaml to configure the cloud deployment. I then deployed the group's Flask API to Render, configured Gunicorn with a single worker to reduce memory usage, and verified that all four endpoints returned HTTP 200 responses with predictions matching the local Docker tests.
+
+Live API: https://smm-202604-b6-api.onrender.com/health
+
+What I Learned:
+
+I learned how to deploy machine learning APIs to cloud platforms using Docker, Gunicorn and Render. I also gained practical experience with deployment configuration, application health monitoring, integration testing and troubleshooting. Working with GitHub branches and Pull Requests helped me understand how team members can develop, review and integrate their contributions without interfering with each other's work.
 **Member 5:**
 
 | **Details**                                                                                                                           | **Comment** |
