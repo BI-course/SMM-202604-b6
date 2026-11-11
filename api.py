@@ -222,7 +222,14 @@ def predict_credit_risk():
 @app.route("/api/v1/models/mall-customer-segmenter/predictions", methods=["POST"])
 def predict_customer_segment():
     payload = request.get_json()
-    input_row = pd.DataFrame([payload])
+    input_row = pd.DataFrame(
+        [[
+            payload["Age"],
+            payload["Annual Income (k$)"],
+            payload["Spending Score (1-100)"]
+        ]],
+        columns=clustering_scaler.feature_names_in_
+    )
 
     scaled_input = clustering_scaler.transform(input_row)
     assigned_cluster = int(clustering_kmeans.predict(scaled_input)[0])
